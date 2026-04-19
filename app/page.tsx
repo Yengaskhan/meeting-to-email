@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { Counter } from "./components/Counter";
 
 interface ConvertResult {
+  subject: string;
   email: string;
   wasteScore: number;
   justification: string;
   minutesWasted: number;
+  meetingDuration: number;
 }
+
+const MAX_NOTES = 15000;
 
 export default function Home() {
   const [notes, setNotes] = useState("");
@@ -42,6 +47,7 @@ export default function Home() {
 
       const data: ConvertResult = await res.json();
       setResult(data);
+      fetch('https://api.counterapi.dev/v1/vibeboard-tools/meeting-to-email/up').catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -76,26 +82,25 @@ export default function Home() {
 
   const handleShare = async () => {
     if (!result) return;
-    const text = `Meeting Waste Score: ${result.wasteScore}/100 - ${result.justification} (${result.minutesWasted} minutes wasted)`;
+    const text = `Meeting Waste Score: ${result.wasteScore}/100\n${result.justification}\n${result.minutesWasted} of ${result.meetingDuration} minutes wasted.`;
     if (navigator.share) {
       try {
         await navigator.share({ text });
+        return;
       } catch {
-        await navigator.clipboard.writeText(text);
-        setShared(true);
-        setTimeout(() => setShared(false), 2000);
+        // user cancelled or unsupported — fall through to clipboard
       }
-    } else {
-      await navigator.clipboard.writeText(text);
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
     }
+    await navigator.clipboard.writeText(text);
+    setShared(true);
+    setTimeout(() => setShared(false), 2000);
   };
 
-  const generateSubject = (score: number) => {
-    if (score <= 30) return "Re: That meeting that was actually useful (rare W)";
-    if (score <= 60) return "Re: This could have been shorter but here we are";
-    return "Re: This meeting was a crime against productivity";
+  const handleTweet = () => {
+    if (!result) return;
+    const tweet = `This meeting scored ${result.wasteScore}/100 on the Waste-o-Meter.\n\n"${result.subject}"\n\n${result.minutesWasted} of ${result.meetingDuration} minutes wasted.\n\nRate your own meetings:`;
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweet)}&url=${encodeURIComponent("https://vibe-board-sand.vercel.app")}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -109,16 +114,31 @@ export default function Home() {
           <p className="text-lg text-zinc-400">
             That hour-long meeting? It was 3 sentences.
           </p>
+          <div className="mt-4 flex justify-center">
+            <Counter
+              namespace="vibeboard-tools"
+              counterKey="meeting-to-email"
+              label="meetings deemed unnecessary"
+              incrementOnMount={false}
+            />
+          </div>
         </div>
 
         {/* Input Section */}
         <div className="space-y-5">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Paste your meeting notes or transcript here..."
-            className="w-full h-48 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
-          />
+          <div className="relative">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, MAX_NOTES))}
+              placeholder="Paste your meeting notes or transcript here..."
+              className="w-full h-48 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+            />
+            <div className={`pointer-events-none absolute bottom-2 right-3 text-[11px] font-mono ${
+              notes.length > MAX_NOTES * 0.9 ? 'text-orange-400' : 'text-zinc-500'
+            }`}>
+              {notes.length.toLocaleString()} / {MAX_NOTES.toLocaleString()}
+            </div>
+          </div>
 
           {/* Tone Toggle */}
           <div className="flex items-center justify-between bg-zinc-900/60 border border-zinc-700/40 rounded-xl px-5 py-3">
@@ -220,7 +240,7 @@ export default function Home() {
                 <div className="flex gap-2 text-sm">
                   <span className="text-zinc-500 w-14 shrink-0">Subject:</span>
                   <span className="text-zinc-100 font-medium">
-                    {generateSubject(result.wasteScore)}
+                    {result.subject}
                   </span>
                 </div>
               </div>
@@ -267,24 +287,30 @@ export default function Home() {
                   {result.minutesWasted}
                 </div>
                 <div className="text-sm mt-1 text-zinc-500">
-                  out of 30 minutes
+                  out of {result.meetingDuration} minutes
                 </div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleTweet}
+                className="flex-1 min-w-[140px] py-2.5 bg-white hover:bg-zinc-100 text-zinc-950 rounded-xl transition-colors text-sm font-semibold"
+              >
+                Post to X
+              </button>
               <button
                 onClick={handleCopy}
-                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 text-white rounded-xl transition-colors text-sm font-medium"
+                className="flex-1 min-w-[140px] py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 text-white rounded-xl transition-colors text-sm font-medium"
               >
                 {copied ? "Copied!" : "Copy Email"}
               </button>
               <button
                 onClick={handleShare}
-                className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 text-white rounded-xl transition-colors text-sm font-medium"
+                className="flex-1 min-w-[140px] py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 text-white rounded-xl transition-colors text-sm font-medium"
               >
-                {shared ? "Copied to clipboard!" : "Share Score"}
+                {shared ? "Copied!" : "Share Score"}
               </button>
             </div>
           </div>
